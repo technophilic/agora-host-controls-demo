@@ -9,6 +9,7 @@ let handleFail = function(err){
 
 // Queries the container in which the remote feeds belong
 let remoteContainer= document.getElementById("remote-container");
+let stopButton = document.getElementById("stop");
 let participantContainer= document.getElementById("participants");
 
 /**
@@ -37,19 +38,40 @@ function removeVideoStream (evt) {
     remDiv.parentNode.removeChild(remDiv);
 }
 
+
+/**
+ * @name addParticipantToList
+ * @description add a new participant to the participant list
+ * @param uid - user id of the participant. It is "0" for local user
+ * @param name - Name of the participant
+ */
 function addParticipantToList (uid,name) {
     let participantDiv = document.createElement("li"); // Create a new div for every stream
     participantDiv.id = `participant${uid}`;                       // Assigning id to div
-    participantDiv.innerHTML = `<span>${name}</span><button id="aud-btn-${uid}">mute audio</button><button id="vid-btn-${uid}">mute video</button>`;
+    participantDiv.innerHTML = `<span>${name}</span>${uid===0?'(local)':'(remote)<button id="kick-btn-'+uid+'">kick out</button>'}<button id="aud-btn-${uid}">mute audio</button><button id="vid-btn-${uid}">mute video</button>`;
     participantContainer.appendChild(participantDiv);      // Add new div to container
 
 }
+
+
+/**
+ * @name removeParticipantFromList
+ * @description removes a participant from the participant list
+ * @param uid - user id of the participant. It is "0" for local user
+ */
 function removeParticipantFromList (uid) {
     let remDiv=document.getElementById(`participant${uid}`);
     console.log(uid, remDiv);
     remDiv && remDiv.parentNode.removeChild(remDiv);
 }
 
+/**
+ * @name sendhostMessage
+ * @description Sends a host control message to the remote user.
+ * @param rtmClient - Agora RTM client
+ * @param peerId - Id of a remote user (peer)
+ * @param type - Type of message that needs to be sent can be unmuteAudio, muteAudio. unmuteVideo, muteVideo, kicked
+ */
 const sendhostMessage = (rtmClient, peerId, type) => {
     console.log("sending host message", rtmClient, peerId, type);
     rtmClient.sendMessageToPeer(
@@ -66,6 +88,7 @@ const sendhostMessage = (rtmClient, peerId, type) => {
       });
 };
 
+
 let remoteStreams={};
 let localStream;
 const addToStreams = stream => remoteStreams[stream.getId()] = stream;
@@ -76,6 +99,7 @@ const isVideoMuted = ele => ele.innerHTML === 'unmute video'; // Replace with an
 
 const toggleAudioUI = (ele, muted) => muted ? ele.innerHTML = 'unmute audio': ele.innerHTML = 'mute audio';
 const toggleVideoUI = (ele, muted) => muted ? ele.innerHTML = 'unmute video': ele.innerHTML = 'mute video';
+
 
 const toggleLocalAudio = audElement => isAudioMuted(audElement) ? localStream.unmuteAudio() : localStream.muteAudio();
 const toggleLocalVideo = vidElement => isVideoMuted(vidElement) ? localStream.unmuteVideo() : localStream.muteVideo();
@@ -91,9 +115,10 @@ const assignLocalClickHandlers = (audElement, vidElement) => {
     }
 }
 
-const assignRemoteClickHandlers = (rtmClient, uid, audElement, vidElement) => {
+const assignRemoteClickHandlers = (rtmClient, uid, audElement, vidElement, kickElement) => {
     audElement.onclick = () => isAudioMuted(audElement) ? sendhostMessage(rtmClient,uid,'unmuteAudio') : sendhostMessage(rtmClient,uid,'muteAudio');
     vidElement.onclick = () => isVideoMuted(vidElement) ? sendhostMessage(rtmClient,uid,'unmuteVideo') : sendhostMessage(rtmClient,uid,'muteVideo');
+    kickElement.onclick = () => sendhostMessage(rtmClient,uid,'kicked');
 }
 
 
@@ -105,14 +130,31 @@ document.getElementById("start").onclick = function () {
     let client = AgoraRTC.createClient({
         mode: 'rtc',
         codec: "vp8"
-    }); 
-
+    });
     let appid = document.getElementById("app-id").value;
     let name = document.getElementById("name").value;
     let channelid="any-channel";
 
     const rtmClient = AgoraRTM.createInstance(appid);
     client.init(appid,() => console.log("AgoraRTC client initialized") ,handleFail);
+
+    
+    const logout = () => {
+        client.leave();
+        rtmClient.logout();
+        localStream.close();
+        document.getElementById('me').innerHTML='';
+        remoteStreams.innerHTML='';
+        participantContainer.innerHTML='';
+        Object.keys(remoteStreams).map((uid)=>{
+            remoteStreams[uid].close();
+        });
+        localStream= undefined;
+        remoteStreams={};
+    };
+
+    stopButton.onclick= logout;
+
 
     // The client joins the channel
     client.join(null,channelid,null, async (uid)=>{
@@ -138,18 +180,24 @@ document.getElementById("start").onclick = function () {
             console.log("recieved a message", peerId, message)
             const audElement = document.getElementById(`aud-btn-${0}`);
             const vidElement = document.getElementById(`vid-btn-${0}`);
-            localStream[message.text]();
             if(message.text === 'unmuteAudio'){
                 toggleAudioUI(audElement, false);
+                localStream.unmuteAudio();
             } 
             else if(message.text === 'muteAudio'){
                 toggleAudioUI(audElement, true);
+                localStream.muteAudio();
             } 
             else if(message.text === 'unmuteVideo'){
                 toggleVideoUI(vidElement, false);
+                localStream.unmuteVideo();
             } 
             else if(message.text === 'muteVideo'){
                 toggleVideoUI(vidElement, true);
+                localStream.muteVideo();
+            } 
+            else if(message.text === 'kicked'){
+                logout();
             }
         });
         const channel = rtmClient.createChannel(channelid);
@@ -158,7 +206,8 @@ document.getElementById("start").onclick = function () {
             addParticipantToList(uidSplit[0], uidSplit[1]);
             const audElement = document.getElementById(`aud-btn-${uidSplit[0]}`);
             const vidElement = document.getElementById(`vid-btn-${uidSplit[0]}`);
-            assignRemoteClickHandlers(rtmClient, rtmId, audElement, vidElement);
+            const kickElement = document.getElementById(`kick-btn-${uidSplit[0]}`);
+            assignRemoteClickHandlers(rtmClient, rtmId, audElement, vidElement,kickElement);
         });
         channel.on('MemberLeft', (rtmId) => {
             const uidSplit = rtmId.split(':');
@@ -172,7 +221,8 @@ document.getElementById("start").onclick = function () {
                 addParticipantToList(uidSplit[0], uidSplit[1]);
                 const audElement = document.getElementById(`aud-btn-${uidSplit[0]}`);
                 const vidElement = document.getElementById(`vid-btn-${uidSplit[0]}`);
-                assignRemoteClickHandlers(rtmClient, rtmId, audElement, vidElement);
+                const kickElement = document.getElementById(`kick-btn-${uidSplit[0]}`);
+                assignRemoteClickHandlers(rtmClient, rtmId, audElement, vidElement,kickElement);
             }
         });
 
