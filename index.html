@@ -13,14 +13,14 @@
     </h1>
 
     <p>App id : <input type="text" id="app-id" value=""></p>
-    <p>Name : <input type="text" id="name" placeholder="Enter your name"></p>
-    <button id="start">Start</button>
+    <div id="btn-container">
+        <button id="start">Start</button>
+        <button id="stop">Stop</button>
+    </div>
 
     <h4>My Feed :</h4>
     <div id="me"></div>
 
-    <h4>Participants list :</h4>
-    <ol id="participants"></ol>
 
     <h4>Remote Feeds :</h4>
     <div id="remote-container">
@@ -28,7 +28,6 @@
     </div>
 
     <script src="https://cdn.agora.io/sdk/release/AgoraRTCSDK-3.0.0.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/agora-rtm-sdk@1.4.1/index.min.js"></script>
     <script src="scripts/script.js"></script>
 </body>
 

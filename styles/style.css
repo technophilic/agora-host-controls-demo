@@ -7,9 +7,10 @@ li *{
 h1,h4,p{
     text-align: center;
 }
-#start{
+#btn-container{
     display: block;
     margin: 0 auto;
+    text-align: center;
 }
 #remote-container video{
     height: auto;
